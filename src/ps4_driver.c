@@ -1,4 +1,4 @@
-#include "ps4.h"
+#include "ps4_driver.h"
 
 #include <fcntl.h>
 #include <linux/input.h> // SUPER IMPORTANT - FOR EVENTS
@@ -6,7 +6,7 @@
 #include <pthread.h>
 #include <unistd.h>
 
-const char* gamepadName = "/dev/input/event2";
+const char* gamepadName = GAMEPAD_EVENT_FILENAME;
 volatile int gamepad = -1;
 
 uint64_t gp_counter = 0;
@@ -46,6 +46,7 @@ void* gp_getEvent(void* args)
 	int ev_size;
 	ev_size = sizeof(event);
 	while (1){
+		// Should read ev_size bytes. If not, incorrect read and try again.
 		if (read(gamepad, &event, ev_size) < ev_size) 	continue;
 
 		// Only care about 2 types of events: button press and axis absolute change
@@ -63,6 +64,8 @@ void* gp_getEvent(void* args)
 				gp_event.value = event.value - 128; // center on 0, -ve to left, +ve to right
 			else if (ecode == LEFT_ANALOG_Y || ecode == RIGHT_ANALOG_Y)
 				gp_event.value = 128 - event.value; // center on 0, -ve to bottom, +ve to top
+			else if (ecode == DIGITAL_Y)
+				gp_event.value = -event.value;
 			else
 				gp_event.value = event.value;
 		}

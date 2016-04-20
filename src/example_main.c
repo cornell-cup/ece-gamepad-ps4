@@ -8,12 +8,12 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-#include "ps4.h"
+#include "ps4_driver.h"
 
 int main()
 {
 
-	system("rfkill unblock all\n");
+	system("rfkill unblock all\n"); // Allow rf connection
 
 	// Hold SHARE and PS buttons together for 3-5 seconds until white light strobes to enter pairing mode
 	// Then use bluetoothctl to pair, trust and connect
