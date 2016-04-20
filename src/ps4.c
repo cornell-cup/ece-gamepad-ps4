@@ -1,40 +1,37 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdarg.h>
-#include <sys/time.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <linux/input.h> // SUPER IMPORTANT - FOR EVENTS
 #include "ps4.h"
 
+#include <fcntl.h>
+#include <linux/input.h> // SUPER IMPORTANT - FOR EVENTS
+#include "mraa.h"
 #include <pthread.h>
+#include <unistd.h>
 
 const char* gamepadName = "/dev/input/event2";
 volatile int gamepad = -1;
 
+uint64_t gp_counter = 0;
+
 int gp_init(void)
 {
-	fprintf(stdout, "Attempting to connect to gamepad!\n");
+	int num_attempts = 0;
 	do {
 		gamepad = open(gamepadName, O_RDONLY | O_NONBLOCK);
-		//if (gamepad < 0)
-		//fprintf(stderr, "Cannot access gamepad at %s\n", gamepadName);
-	} while (gamepad < 0);
+		num_attempts++;
+		usleep(500000); // 500ms retry delay
+	} while (gamepad < 0 && num_attempts < MAX_CONNECTION_ATTEMPTS);
 
-	fprintf(stdout, "Connection to gamepad successful!\n");
-
-	fprintf(stdout, "Attempting to setup gamepad event handler\n");
+	if (num_attempts >= MAX_CONNECTION_ATTEMPTS){
+		fprintf(stderr, "Couldn't connect to gamepad - check bluetooth connection!\n");
+		return -2;
+	}
 
 	pthread_t gp_thread;
 	if (pthread_create(&gp_thread, NULL, gp_getEvent, NULL)){
-		fprintf(stdout, "Couldn't set up pthread\n");
+		fprintf(stderr, "Couldn't set up pthread\n");
 		return -1;
 	}
-	else{
-		fprintf(stdout, "Set up pthread!\n");
-		return 0;
-	}
+
+	return 0;
 }
 
 void gp_quit(void)
@@ -46,24 +43,36 @@ void gp_quit(void)
 void* gp_getEvent(void* args)
 {
 	struct input_event event;
-	int ev_size = sizeof(ev_size);
+	int ev_size;
+	ev_size = sizeof(event);
 	while (1){
 		if (read(gamepad, &event, ev_size) < ev_size) 	continue;
 
 		// Only care about 2 types of events: button press and axis absolute change
+		if (event.type != GP_BTN && event.type != GP_ABS) 	continue;
+
 		gp_event.type = event.code;
+		gp_event.count = gp_counter++;
+
 		if (event.type == GP_BTN){
 			gp_event.value = 1;
 		}
 		else if (event.type == GP_ABS){
-			gp_event.value = event.value;
+			int ecode = event.code;
+			if (ecode == LEFT_ANALOG_X || ecode == RIGHT_ANALOG_X)
+				gp_event.value = event.value - 128; // center on 0, -ve to left, +ve to right
+			else if (ecode == LEFT_ANALOG_Y || ecode == RIGHT_ANALOG_Y)
+				gp_event.value = 128 - event.value; // center on 0, -ve to bottom, +ve to top
+			else
+				gp_event.value = event.value;
 		}
 
 	}
 }
 
-/* HAT0X -> DIGITAL L/R
- * HAT0Y -> DIGITAL U/D
+
+/* ABS_HAT0X -> DIGITAL L/R
+ * ABS_HAT0Y -> DIGITAL U/D
  * ABS_RX -> L2 (3)
  * ABS_RY -> R2 (4)
  * ABS_RZ -> RIGHT ANALOG -> 0 AT TOP, 255 AT BOTTOM, SAME VALUE GOING CW/CCW FROM TOP TO BOTTOM
